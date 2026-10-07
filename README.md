@@ -80,12 +80,10 @@ cargo build --release
 
 `%APPDATA%\llm-tracker\config.json` (트레이 우클릭 → **설정 파일 열기**). 앱은 조회할 때마다 이 파일을 다시 읽으므로 재시작이 필요 없습니다(`interval_min`은 재시작 후 적용).
 
-| 키 | 기본값 | 설명 |
-|---|---|---|
-| `interval_min` | `5` | 조회 주기(분). 1~120 |
-| `auto_refresh` | `false` | `true`면 만료된 Claude/OpenAI OAuth 토큰을 앱이 직접 갱신합니다 (아래 주의 참고) |
-| `codex_home` | (없음) | Codex 로그인 폴더를 직접 지정. 없으면 `CODEX_HOME` 환경변수, 그다음 `~\.codex` |
-| `opencode_cookie_dpapi` | | 앱이 관리하는 암호화된 쿠키. 직접 수정하지 마세요 |
+- `interval_min` (기본 `5`): 조회 주기(분). 1~120
+- `auto_refresh` (기본 `false`): `true`면 만료된 Claude/OpenAI OAuth 토큰을 앱이 직접 갱신합니다 (아래 주의 참고)
+- `codex_home` (기본 없음): Codex 로그인 폴더를 직접 지정합니다. 없으면 `CODEX_HOME` 환경변수, 그다음 `~\.codex`를 씁니다
+- `opencode_cookie_dpapi`: 앱이 관리하는 암호화된 쿠키입니다. 직접 수정하지 마세요
 
 조회에 실패하면 전체 에러 문구가 `%APPDATA%\llm-tracker\last-error.txt`에 남습니다(모두 성공하면 삭제됩니다).
 
