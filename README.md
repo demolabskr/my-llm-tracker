@@ -35,17 +35,20 @@ OpenCode Go
 
 각 서비스가 **공식 문서화된 사용량 API를 제공하지 않기 때문에**, 각 서비스의 CLI·웹 콘솔이 내부적으로 쓰는 엔드포인트를 읽습니다.
 
-| 서비스 | 표시하는 창 | 조회 대상 |
-|---|---|---|
-| **Claude** (Pro/Max) | 5시간 · 7일 | `api.anthropic.com/api/oauth/usage` |
-| **OpenAI** (ChatGPT/Codex) | 플랜이 주는 창 (5시간·7일) | `chatgpt.com/backend-api/wham/usage` |
-| **OpenCode Go** | 5시간 · 7일 · 30일 | `opencode.ai/console/api/go/status` |
-
 로그인 정보는 이미 PC에 있는 것을 읽습니다.
 
-- **Claude**: `%USERPROFILE%\.claude\.credentials.json` (또는 `CLAUDE_CONFIG_DIR` 폴더)
-- **OpenAI**: `%CODEX_HOME%\auth.json` (환경변수가 없으면 `~\.codex\auth.json`)
-- **OpenCode Go**: 브라우저의 콘솔 세션 쿠키 (아래 [서비스별 준비](#서비스별-준비) 참고)
+- **Claude** (Pro/Max)
+  - 표시: 5시간 · 7일
+  - 조회: `api.anthropic.com/api/oauth/usage`
+  - 로그인 정보: `%USERPROFILE%\.claude\.credentials.json` (또는 `CLAUDE_CONFIG_DIR` 폴더)
+- **OpenAI** (ChatGPT/Codex)
+  - 표시: 플랜이 주는 창 (5시간 · 7일)
+  - 조회: `chatgpt.com/backend-api/wham/usage`
+  - 로그인 정보: `%CODEX_HOME%\auth.json` (환경변수가 없으면 `~\.codex\auth.json`)
+- **OpenCode Go**
+  - 표시: 5시간 · 7일 · 30일
+  - 조회: `opencode.ai/console/api/go/status`
+  - 로그인 정보: 브라우저의 콘솔 세션 쿠키 (아래 [서비스별 준비](#서비스별-준비) 참고)
 
 ## 설치
 
