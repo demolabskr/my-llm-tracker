@@ -1,0 +1,11 @@
+# Rust build output
+/target/
+
+# 로컬 실행용 복사본 (릴리스 빌드 결과를 복사해 둔 파일)
+/llm-tracker.exe
+
+# 에디터/OS
+.vscode/
+.idea/
+Thumbs.db
+*.tmp
