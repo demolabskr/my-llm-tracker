@@ -53,6 +53,7 @@ static FONT: AtomicIsize = AtomicIsize::new(0);
 static FONT_B: AtomicIsize = AtomicIsize::new(0);
 static LAST_CLOSE: AtomicU64 = AtomicU64::new(0);
 static TASKBAR_CREATED: AtomicU64 = AtomicU64::new(0);
+static LAST_TIP: Mutex<String> = Mutex::new(String::new());
 
 fn lock() -> std::sync::MutexGuard<'static, Vec<Svc>> {
     SVCS.lock().unwrap_or_else(|e| e.into_inner())
@@ -218,6 +219,13 @@ unsafe fn make_icon() -> HICON {
 unsafe fn update_tray(add: bool) {
     let h = hwnd(&MAIN);
     let tip = tooltip(&lock());
+    {
+        let mut last = LAST_TIP.lock().unwrap_or_else(|e| e.into_inner());
+        if !add && *last == tip {
+            return; // nothing changed: skip the round trip to explorer
+        }
+        *last = tip.clone();
+    }
     let mut icon = ICON.load(Relaxed) as HICON;
     if icon.is_null() {
         icon = make_icon();
@@ -463,6 +471,7 @@ unsafe fn autorun_enabled() -> bool {
 }
 
 unsafe fn set_autorun(on: bool) {
+    store::save_autorun(on);
     let mut key: HKEY = null_mut();
     if RegOpenKeyExW(HKEY_CURRENT_USER, wide(RUN_KEY).as_ptr(), 0, KEY_SET_VALUE, &mut key) != 0 {
         return;
@@ -647,11 +656,17 @@ fn main() {
         }
         update_tray(true);
         refresh();
+        let cfg = store::load();
+        // keep the "start with Windows" choice: record an existing registration, restore a lost one
+        match (autorun_enabled(), cfg.autorun) {
+            (true, false) => store::save_autorun(true),
+            (false, true) => set_autorun(true),
+            _ => {}
+        }
         if std::env::args().any(|a| a == "--show") {
             KEEP_OPEN.store(true, SeqCst);
             show_popup();
         }
-        let cfg = store::load();
         SetTimer(h, TIMER_POLL, (cfg.interval_min * 60_000) as u32, None);
 
         let mut m: MSG = std::mem::zeroed();

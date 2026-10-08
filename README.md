@@ -83,6 +83,7 @@ cargo build --release
 - `interval_min` (기본 `5`): 조회 주기(분). 1~120
 - `auto_refresh` (기본 `false`): `true`면 만료된 Claude/OpenAI OAuth 토큰을 앱이 직접 갱신합니다 (아래 주의 참고)
 - `codex_home` (기본 없음): Codex 로그인 폴더를 직접 지정합니다. 없으면 `CODEX_HOME` 환경변수, 그다음 `~\.codex`를 씁니다
+- `autorun`: Windows 시작 시 실행 여부입니다. 트레이 메뉴가 관리하며, 시작할 때 자동 실행 등록이 사라져 있으면 이 값을 보고 복구합니다
 - `opencode_cookie_dpapi`: 앱이 관리하는 암호화된 쿠키입니다. 직접 수정하지 마세요
 
 조회에 실패하면 전체 에러 문구가 `%APPDATA%\llm-tracker\last-error.txt`에 남습니다(모두 성공하면 삭제됩니다).
