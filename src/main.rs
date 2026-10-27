@@ -12,9 +12,7 @@ use std::sync::Mutex;
 use util::{fmt_dur, now, wide};
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Graphics::Gdi::*;
-use windows_sys::Win32::System::DataExchange::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::System::Memory::{GlobalLock, GlobalUnlock};
 use windows_sys::Win32::System::Registry::*;
 use windows_sys::Win32::System::SystemInformation::GetTickCount64;
 use windows_sys::Win32::System::Threading::*;
@@ -25,13 +23,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_DONE: u32 = WM_APP + 2;
 const ID_REFRESH: usize = 1;
-const ID_COOKIE: usize = 2;
 const ID_AUTORUN: usize = 3;
 const ID_CONFIG: usize = 4;
 const ID_QUIT: usize = 5;
 const TIMER_POLL: usize = 1;
 const TIMER_RESUME: usize = 2;
-const CF_UNICODETEXT: u32 = 13;
 const POPUP_W: i32 = 330;
 
 // ---------------------------------------------------------------- shared state
@@ -90,7 +86,6 @@ fn load_demo() {
     g.clear();
     g.push(Svc { name: "Claude", plan: "max".into(), wins: vec![w("5h", 58.0, 2), w("7d", 82.0, 90)], err: None });
     g.push(Svc { name: "OpenAI", plan: "plus".into(), wins: vec![w("5h", 12.0, 1), w("7d", 33.0, 120)], err: Some("토큰 만료 - 이 PC에서 codex를 한 번 실행하세요".into()) });
-    g.push(Svc { name: "OpenCode Go", plan: String::new(), wins: vec![w("5h", 99.0, 4), w("7d", 85.0, 50), w("30d", 8.0, 600)], err: None });
     UPDATED.store(now() as u64 - 120, SeqCst);
 }
 
@@ -104,11 +99,17 @@ fn refresh() {
     }
     std::thread::spawn(|| {
         let cfg = store::load();
+        store::log(&format!(
+            "refresh: auto_refresh={} codex_home=[{}] | {}",
+            cfg.auto_refresh, cfg.codex_home, store::diag()
+        ));
         let results = [
             ("Claude", providers::claude::fetch(cfg.auto_refresh)),
             ("OpenAI", providers::openai::fetch(&cfg)),
-            ("OpenCode Go", providers::opencode::fetch(&cfg.cookie)),
         ];
+        for (name, res) in &results {
+            store::log(&format!("  {name}: {}", res.as_ref().map(|_| "ok".to_string()).unwrap_or_else(|e| e.clone())));
+        }
         {
             let mut g = lock();
             if g.is_empty() {
@@ -158,10 +159,7 @@ unsafe fn tray_data(h: HWND) -> NOTIFYICONDATAW {
 fn tooltip(svcs: &[Svc]) -> String {
     let mut parts = Vec::new();
     for s in svcs {
-        let short = match s.name {
-            "OpenCode Go" => "Go",
-            n => n,
-        };
+        let short = s.name;
         if s.wins.is_empty() {
             parts.push(format!("{short} !"));
         } else {
@@ -222,7 +220,8 @@ unsafe fn update_tray(add: bool) {
     {
         let mut last = LAST_TIP.lock().unwrap_or_else(|e| e.into_inner());
         if !add && *last == tip {
-            return; // nothing changed: skip the round trip to explorer
+            trim_memory(); // nothing changed: skip the round trip to explorer, still release memory
+            return;
         }
         *last = tip.clone();
     }
@@ -488,58 +487,12 @@ unsafe fn set_autorun(on: bool) {
     RegCloseKey(key);
 }
 
-unsafe fn clipboard_text() -> Option<String> {
-    if OpenClipboard(hwnd(&MAIN)) == 0 {
-        return None;
-    }
-    let mut out = None;
-    let h = GetClipboardData(CF_UNICODETEXT);
-    if !h.is_null() {
-        let p = GlobalLock(h) as *const u16;
-        if !p.is_null() {
-            let mut n = 0;
-            while *p.add(n) != 0 && n < 8192 {
-                n += 1;
-            }
-            out = Some(String::from_utf16_lossy(std::slice::from_raw_parts(p, n)));
-            GlobalUnlock(h);
-        }
-    }
-    CloseClipboard();
-    out
-}
-
-unsafe fn msgbox(text: &str, flags: u32) {
-    MessageBoxW(hwnd(&MAIN), wide(text).as_ptr(), wide("LLM Tracker").as_ptr(), flags | MB_TOPMOST);
-}
-
-unsafe fn cookie_from_clipboard() {
-    let cookie = clipboard_text().map(|t| providers::opencode::normalize_cookie(&t)).unwrap_or_default();
-    if cookie.len() < 16 {
-        msgbox(
-            "클립보드에서 OpenCode 세션 쿠키를 찾지 못했습니다.\n\n\
-             opencode.ai 로그인 상태에서 F12 → Application → Cookies → https://opencode.ai → \
-             '__Host-console_session' 의 Value(st_로 시작)를 복사한 뒤 다시 시도하세요.",
-            MB_OK | MB_ICONWARNING,
-        );
-        return;
-    }
-    match store::save_cookie(&cookie) {
-        Ok(()) => {
-            refresh();
-            msgbox("쿠키를 저장했습니다 (Windows 계정으로 암호화). 사용량을 갱신합니다.", MB_OK | MB_ICONINFORMATION);
-        }
-        Err(e) => msgbox(&format!("저장 실패: {e}"), MB_OK | MB_ICONERROR),
-    }
-}
-
 unsafe fn context_menu(h: HWND) {
     let menu = CreatePopupMenu();
     let add = |id: usize, label: &str, checked: bool| {
         AppendMenuW(menu, MF_STRING | if checked { MF_CHECKED } else { 0 }, id, wide(label).as_ptr());
     };
     add(ID_REFRESH, "지금 새로고침", false);
-    add(ID_COOKIE, "OpenCode 쿠키 붙여넣기 (클립보드)", false);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     add(ID_AUTORUN, "Windows 시작 시 실행", autorun_enabled());
     add(ID_CONFIG, "설정 파일 열기", false);
@@ -597,7 +550,6 @@ unsafe extern "system" fn main_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -
         WM_COMMAND => {
             match wp & 0xFFFF {
                 ID_REFRESH => refresh(),
-                ID_COOKIE => cookie_from_clipboard(),
                 ID_AUTORUN => set_autorun(!autorun_enabled()),
                 ID_CONFIG => {
                     store::ensure_exists();

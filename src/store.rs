@@ -1,21 +1,15 @@
-//! Config file (%APPDATA%\llm-tracker\config.json). The OpenCode session cookie is kept
-//! encrypted with DPAPI, so it is only readable by this Windows user.
+//! Config file (%APPDATA%\llm-tracker\config.json).
 
-use crate::util::{b64_decode, b64_encode, read_json, write_json_atomic};
+use crate::util::{read_json, write_json_atomic};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use windows_sys::Win32::Foundation::LocalFree;
-use windows_sys::Win32::Security::Cryptography::{
-    CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
-};
 
 #[derive(Clone)]
 pub struct Config {
     pub interval_min: u64,
     pub auto_refresh: bool,
     pub autorun: bool,
-    pub cookie: String,
     pub codex_home: String,
 }
 
@@ -47,32 +41,31 @@ fn read_config() -> Result<Option<Value>, String> {
 }
 
 fn parse(v: &Value) -> Config {
-    let cookie = v["opencode_cookie_dpapi"]
-        .as_str()
-        .and_then(b64_decode)
-        .and_then(|b| unprotect(&b))
-        .and_then(|b| String::from_utf8(b).ok())
-        .unwrap_or_default();
     Config {
         interval_min: v["interval_min"].as_u64().unwrap_or(5).clamp(1, 120),
         auto_refresh: v["auto_refresh"].as_bool().unwrap_or(false),
         autorun: v["autorun"].as_bool().unwrap_or(false),
-        cookie,
         codex_home: v["codex_home"].as_str().unwrap_or("").to_string(),
     }
 }
 
 /// Never falls back to defaults because of a transient read failure: that would silently turn
-/// off auto_refresh and drop the cookie. It keeps the last good config instead.
+/// off auto_refresh. It keeps the last good config instead.
 pub fn load() -> Config {
     let mut last = LAST_GOOD.lock().unwrap_or_else(|e| e.into_inner());
     match read_config() {
         Ok(v) => {
+            if v.is_none() {
+                log("load: config.json not found -> defaults");
+            }
             let c = parse(&v.unwrap_or(Value::Null));
             *last = Some(c.clone());
             c
         }
-        Err(_) => last.clone().unwrap_or_else(|| parse(&Value::Null)),
+        Err(e) => {
+            log(&format!("load: read failed ({e}) -> {}", if last.is_some() { "last good" } else { "defaults" }));
+            last.clone().unwrap_or_else(|| parse(&Value::Null))
+        }
     }
 }
 
@@ -91,14 +84,32 @@ fn update(key: &str, val: Value) -> Result<(), String> {
     write_json_atomic(&p, &v)
 }
 
-pub fn save_cookie(cookie: &str) -> Result<(), String> {
-    let enc = protect(cookie.as_bytes()).ok_or("DPAPI 암호화 실패")?;
-    update("opencode_cookie_dpapi", Value::String(b64_encode(&enc)))
-}
-
 /// The "start with Windows" choice is kept here too, so it can be restored if the Run key is lost.
 pub fn save_autorun(on: bool) {
     let _ = update("autorun", json!(on));
+}
+
+/// What this process currently sees of the config file (for debug.log).
+pub fn diag() -> String {
+    let p = path();
+    let state = match read_json(&p) {
+        Ok(_) => "read=ok".to_string(),
+        Err(e) => format!("read=ERR({e})"),
+    };
+    format!("path={} exists={} {state}", p.display(), p.exists())
+}
+
+/// Append one line to %APPDATA%\llm-tracker\debug.log (kept under ~32 KB).
+pub fn log(line: &str) {
+    let lp = path().with_file_name("debug.log");
+    if std::fs::metadata(&lp).map_or(false, |m| m.len() > 32 * 1024) {
+        let old = std::fs::read_to_string(&lp).unwrap_or_default();
+        let _ = std::fs::write(&lp, old.get(old.len() / 2..).unwrap_or(""));
+    }
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&lp) {
+        let _ = writeln!(f, "{} {line}", crate::util::iso_now());
+    }
 }
 
 /// Create the config file with defaults on first run so it is easy to find and edit.
@@ -106,31 +117,5 @@ pub fn ensure_exists() {
     if !path().exists() {
         let _ = update("interval_min", json!(5));
         let _ = update("auto_refresh", json!(false));
-    }
-}
-
-fn protect(data: &[u8]) -> Option<Vec<u8>> {
-    unsafe {
-        let input = CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 };
-        let mut out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
-        if CryptProtectData(&input, std::ptr::null(), std::ptr::null(), std::ptr::null(), std::ptr::null(), CRYPTPROTECT_UI_FORBIDDEN, &mut out) == 0 {
-            return None;
-        }
-        let v = std::slice::from_raw_parts(out.pbData, out.cbData as usize).to_vec();
-        LocalFree(out.pbData as _);
-        Some(v)
-    }
-}
-
-fn unprotect(data: &[u8]) -> Option<Vec<u8>> {
-    unsafe {
-        let input = CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 };
-        let mut out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
-        if CryptUnprotectData(&input, std::ptr::null_mut(), std::ptr::null(), std::ptr::null(), std::ptr::null(), CRYPTPROTECT_UI_FORBIDDEN, &mut out) == 0 {
-            return None;
-        }
-        let v = std::slice::from_raw_parts(out.pbData, out.cbData as usize).to_vec();
-        LocalFree(out.pbData as _);
-        Some(v)
     }
 }

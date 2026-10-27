@@ -77,20 +77,6 @@ pub fn fmt_dur(secs: i64) -> String {
     }
 }
 
-const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-pub fn b64_encode(data: &[u8]) -> String {
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    for c in data.chunks(3) {
-        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
-        out.push(B64[(n >> 18) as usize & 63] as char);
-        out.push(B64[(n >> 12) as usize & 63] as char);
-        out.push(if c.len() > 1 { B64[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if c.len() > 2 { B64[n as usize & 63] as char } else { '=' });
-    }
-    out
-}
-
 /// Accepts standard and url-safe alphabets, with or without padding.
 pub fn b64_decode(s: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(s.len() * 3 / 4);
@@ -153,9 +139,10 @@ mod tests {
 
     #[test]
     fn b64() {
-        for s in ["", "a", "ab", "abc", "abcd", "\u{1f600}한글"] {
-            assert_eq!(b64_decode(&b64_encode(s.as_bytes())).unwrap(), s.as_bytes());
-        }
+        assert_eq!(b64_decode("").unwrap(), b"");
+        assert_eq!(b64_decode("YWJj").unwrap(), b"abc");
+        assert_eq!(b64_decode("YWI=").unwrap(), b"ab");
+        assert_eq!(b64_decode("YQ").unwrap(), b"a");
         assert_eq!(b64_decode("eyJleHAiOjF9").unwrap(), b"{\"exp\":1}");
     }
 

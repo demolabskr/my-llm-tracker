@@ -1,6 +1,5 @@
 pub mod claude;
 pub mod openai;
-pub mod opencode;
 
 /// One usage window (e.g. 5h / 7d / 30d). `left` is the remaining percentage.
 #[derive(Clone)]
